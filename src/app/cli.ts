@@ -6,7 +6,7 @@
 import { openEditor } from "../lib/editor.ts";
 import { exists } from "../lib/fs.ts";
 import { truncate } from "../lib/string.ts";
-import { getCurrentBranch, countCommits, resolveRef } from "../lib/git.ts";
+import { countCommits, getCurrentBranch, resolveRef } from "../lib/git.ts";
 import { convertGitGraphToYaml } from "./converter.ts";
 import { executeRescribe } from "./executor.ts";
 import { createPlan, type RebasePlan } from "./planner.ts";
@@ -30,19 +30,31 @@ export async function startRebase(base: string): Promise<void> {
   const validation = await validateBase(base);
   if (!validation.valid) {
     console.error(`Error: Invalid base '${base}'`);
-    console.error(`\nThis branch has ${validation.totalCommits} commit${validation.totalCommits === 1 ? "" : "s"}.`);
+    console.error(
+      `\nThis branch has ${validation.totalCommits} commit${
+        validation.totalCommits === 1 ? "" : "s"
+      }.`,
+    );
     console.error(`\nTo rescribe all commits, run:`);
     console.error(`  git-rescribe --root`);
     if (validation.totalCommits > 1) {
       console.error(`\nOr to rescribe the last N commits, run:`);
       console.error(`  git-rescribe HEAD~N`);
-      console.error(`  (e.g., git-rescribe HEAD~${Math.min(5, validation.totalCommits - 1)})`);
+      console.error(
+        `  (e.g., git-rescribe HEAD~${
+          Math.min(5, validation.totalCommits - 1)
+        })`,
+      );
     }
     Deno.exit(1);
   }
 
   console.log(`Starting rescribe from ${base}...`);
-  console.log(`This will process ${validation.commitCount} commit${validation.commitCount === 1 ? "" : "s"}.`);
+  console.log(
+    `This will process ${validation.commitCount} commit${
+      validation.commitCount === 1 ? "" : "s"
+    }.`,
+  );
 
   // Query git commit graph directly and generate YAML
   console.log("Generating YAML from commit history...");
@@ -95,10 +107,14 @@ async function validateBase(base: string): Promise<{
  * Preview changes and get user confirmation
  */
 async function previewChanges(plan: RebasePlan): Promise<void> {
-  console.log(`\nPlan for ${plan.commits.length} commit${plan.commits.length === 1 ? "" : "s"}:`);
+  console.log(
+    `\nPlan for ${plan.commits.length} commit${
+      plan.commits.length === 1 ? "" : "s"
+    }:`,
+  );
 
   for (const commitPlan of plan.commits) {
-    const firstLine = commitPlan.commit.message.split('\n')[0];
+    const firstLine = commitPlan.commit.message.split("\n")[0];
     const truncated = truncate(firstLine, 60);
 
     const status = commitPlan.action === "reuse" ? "  Reuse" : " Modify";
@@ -125,7 +141,9 @@ async function previewChanges(plan: RebasePlan): Promise<void> {
  */
 export async function continueRebase(): Promise<void> {
   if (!await exists(RESCRIBE_TODO)) {
-    throw new Error("No rescribe in progress. Did you run 'git-rescribe <base>' first?");
+    throw new Error(
+      "No rescribe in progress. Did you run 'git-rescribe <base>' first?",
+    );
   }
 
   // Create plan
@@ -176,7 +194,7 @@ export async function main(): Promise<void> {
   }
 
   // Filter out flags to get positional args
-  const positionalArgs = args.filter(arg => !arg.startsWith("-"));
+  const positionalArgs = args.filter((arg) => !arg.startsWith("-"));
 
   // Check for flags
   if (args.includes("--abort")) {
@@ -199,7 +217,9 @@ export async function main(): Promise<void> {
   if (positionalArgs.length === 0) {
     console.error("Error: Missing base argument");
     console.error("\nUsage:");
-    console.error("  git-rescribe <base>        Start interactive rebase from base");
+    console.error(
+      "  git-rescribe <base>        Start interactive rebase from base",
+    );
     console.error("  git-rescribe --root        Rescribe all commits");
     console.error("  git-rescribe --continue    Continue in-progress rescribe");
     console.error("  git-rescribe --abort       Abort in-progress rescribe");
@@ -207,7 +227,9 @@ export async function main(): Promise<void> {
     console.error("  --yes, -y                  Skip confirmation prompt");
     console.error("\nExamples:");
     console.error("  git-rescribe HEAD~5        Rescribe last 5 commits");
-    console.error("  git-rescribe main --yes    Rescribe commits since main without prompt");
+    console.error(
+      "  git-rescribe main --yes    Rescribe commits since main without prompt",
+    );
     Deno.exit(1);
   }
 

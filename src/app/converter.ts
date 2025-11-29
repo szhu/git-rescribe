@@ -2,7 +2,7 @@
  * Convert between git commits and rescribe YAML format
  */
 
-import { getCommitInfo, formatIdentity } from "../lib/git.ts";
+import { formatIdentity, getCommitInfo } from "../lib/git.ts";
 import { formatYaml } from "./yaml-prettier.ts";
 import type { RescribeCommit } from "./types.ts";
 
@@ -20,7 +20,8 @@ export async function convertGitGraphToYaml(base: string): Promise<string> {
     stdout: "piped",
   });
   const { stdout } = await revList.output();
-  const commitHashes = new TextDecoder().decode(stdout).trim().split("\n").filter(Boolean);
+  const commitHashes = new TextDecoder().decode(stdout).trim().split("\n")
+    .filter(Boolean);
 
   // Build a map of commit hash -> index for parent resolution
   const commitIndexMap = new Map<string, number>();
@@ -29,64 +30,69 @@ export async function convertGitGraphToYaml(base: string): Promise<string> {
   });
 
   // Process each commit
-  const yamlCommits = await Promise.all(commitHashes.map(async (hash, index) => {
-    const info = await getCommitInfo(hash);
+  const yamlCommits = await Promise.all(
+    commitHashes.map(async (hash, index) => {
+      const info = await getCommitInfo(hash);
 
-    // Determine parent references
-    let parentRefs: string[];
+      // Determine parent references
+      let parentRefs: string[];
 
-    if (info.parents.length === 0) {
-      // Root commit
-      parentRefs = [];
-    } else if (info.parents.length === 1) {
-      // Single parent - check if it's the previous commit in our list
-      const parentHash = info.parents[0];
-      const parentIndex = commitIndexMap.get(parentHash);
-
-      if (parentIndex !== undefined && parentIndex === index - 1) {
-        // Previous commit in sequence
-        parentRefs = ["previous"];
-      } else if (commitIndexMap.has(parentHash)) {
-        // Parent is in our rebase range but not sequential - use rewritten reference
-        parentRefs = [`rewritten:${parentHash.substring(0, 7)}`];
-      } else {
-        // Parent is outside our rebase range
-        parentRefs = [parentHash.substring(0, 7)];
-      }
-    } else {
-      // Merge commit - multiple parents
-      parentRefs = info.parents.map((parentHash, parentIdx) => {
+      if (info.parents.length === 0) {
+        // Root commit
+        parentRefs = [];
+      } else if (info.parents.length === 1) {
+        // Single parent - check if it's the previous commit in our list
+        const parentHash = info.parents[0];
         const parentIndex = commitIndexMap.get(parentHash);
 
-        if (parentIdx === 0 && parentIndex !== undefined && parentIndex === index - 1) {
-          // First parent is previous commit
-          return "previous";
+        if (parentIndex !== undefined && parentIndex === index - 1) {
+          // Previous commit in sequence
+          parentRefs = ["previous"];
         } else if (commitIndexMap.has(parentHash)) {
-          // Parent is in our rebase range - use rewritten reference
-          return `rewritten:${parentHash.substring(0, 7)}`;
+          // Parent is in our rebase range but not sequential - use rewritten reference
+          parentRefs = [`rewritten:${parentHash.substring(0, 7)}`];
         } else {
-          // Parent is outside rebase range
-          return parentHash.substring(0, 7);
+          // Parent is outside our rebase range
+          parentRefs = [parentHash.substring(0, 7)];
         }
-      });
-    }
+      } else {
+        // Merge commit - multiple parents
+        parentRefs = info.parents.map((parentHash, parentIdx) => {
+          const parentIndex = commitIndexMap.get(parentHash);
 
-    const rescribeCommit: RescribeCommit = {
-      author: {
-        date: info.authorDate,
-        identity: formatIdentity(info.authorName, info.authorEmail),
-      },
-      committer: {
-        date: info.committerDate,
-        identity: formatIdentity(info.committerName, info.committerEmail),
-      },
-      content: `commit:${hash.substring(0, 7)}`,
-      message: info.message,
-      parents: parentRefs,
-    };
+          if (
+            parentIdx === 0 && parentIndex !== undefined &&
+            parentIndex === index - 1
+          ) {
+            // First parent is previous commit
+            return "previous";
+          } else if (commitIndexMap.has(parentHash)) {
+            // Parent is in our rebase range - use rewritten reference
+            return `rewritten:${parentHash.substring(0, 7)}`;
+          } else {
+            // Parent is outside rebase range
+            return parentHash.substring(0, 7);
+          }
+        });
+      }
 
-    return rescribeCommit;
-  }));
+      const rescribeCommit: RescribeCommit = {
+        author: {
+          date: info.authorDate,
+          identity: formatIdentity(info.authorName, info.authorEmail),
+        },
+        committer: {
+          date: info.committerDate,
+          identity: formatIdentity(info.committerName, info.committerEmail),
+        },
+        content: `commit:${hash.substring(0, 7)}`,
+        message: info.message,
+        parents: parentRefs,
+      };
+
+      return rescribeCommit;
+    }),
+  );
 
   return await formatYaml({ commits: yamlCommits });
 }

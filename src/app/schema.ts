@@ -11,7 +11,7 @@ const IdentitySchema = z.object({
 
 const ContentSchema = z.string().refine(
   (val) => /^(tree|diff|commit):[a-f0-9]{7,40}$/.test(val),
-  "Content must be tree:hash, diff:hash, or commit:hash"
+  "Content must be tree:hash, diff:hash, or commit:hash",
 );
 
 const ParentSchema = z.union([

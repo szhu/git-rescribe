@@ -8,13 +8,18 @@
  */
 export async function getCommitInfo(hash: string) {
   const command = new Deno.Command("git", {
-    args: ["show", "--format=%an%n%ae%n%aI%n%cn%n%ce%n%cI%n%T%n%P%n%B", "--no-patch", hash],
+    args: [
+      "show",
+      "--format=%an%n%ae%n%aI%n%cn%n%ce%n%cI%n%T%n%P%n%B",
+      "--no-patch",
+      hash,
+    ],
     stdout: "piped",
   });
 
   const { stdout } = await command.output();
   const output = new TextDecoder().decode(stdout);
-  const lines = output.trim().split('\n');
+  const lines = output.trim().split("\n");
 
   const [
     authorName,
@@ -36,15 +41,17 @@ export async function getCommitInfo(hash: string) {
     committerEmail,
     committerDate,
     tree,
-    parents: parentsLine ? parentsLine.split(' ') : [],
-    message: messageLines.join('\n').trim(),
+    parents: parentsLine ? parentsLine.split(" ") : [],
+    message: messageLines.join("\n").trim(),
   };
 }
 
 /**
  * Parse identity string "Name <email@example.com>"
  */
-export function parseIdentity(identity: string): { name: string; email: string } {
+export function parseIdentity(
+  identity: string,
+): { name: string; email: string } {
   const match = identity.match(/^(.+?)\s*<(.+?)>$/);
   if (!match) {
     throw new Error(`Invalid identity format: ${identity}`);

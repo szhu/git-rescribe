@@ -33,7 +33,7 @@ export async function formatYaml(data: RebasePlan): Promise<string> {
 
     // Use |- format for all messages
     lines.push("    message: |-");
-    const messageLines = commit.message.split('\n');
+    const messageLines = commit.message.split("\n");
     for (const msgLine of messageLines) {
       lines.push(`      ${msgLine}`);
     }
@@ -41,7 +41,7 @@ export async function formatYaml(data: RebasePlan): Promise<string> {
     lines.push(`    parents: ${JSON.stringify(commit.parents)}`);
   }
 
-  const yaml = lines.join('\n') + '\n';
+  const yaml = lines.join("\n") + "\n";
 
   // Run through Prettier for final formatting
   const formatted = await prettier.format(yaml, {

@@ -5,7 +5,7 @@
 
 import { parse as parseYaml } from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { RebaseSchema } from "./schema.ts";
-import { getCommitInfo, getTreeHash, formatIdentity } from "../lib/git.ts";
+import { formatIdentity, getCommitInfo, getTreeHash } from "../lib/git.ts";
 import type { RescribeCommit } from "./types.ts";
 
 /**
@@ -45,7 +45,11 @@ export async function createPlan(yamlPath: string): Promise<RebasePlan> {
 
     // Resolve tree and parents
     const tree = await resolveContentStrategy(commit.content);
-    const parents = resolveParents(commit.parents, previousCommit, rewrittenMap);
+    const parents = resolveParents(
+      commit.parents,
+      previousCommit,
+      rewrittenMap,
+    );
 
     // Determine what changed and if we can reuse
     const changes: string[] = [];
@@ -72,7 +76,10 @@ export async function createPlan(yamlPath: string): Promise<RebasePlan> {
       }
 
       // Check author
-      const authorIdentity = formatIdentity(originalInfo.authorName, originalInfo.authorEmail);
+      const authorIdentity = formatIdentity(
+        originalInfo.authorName,
+        originalInfo.authorEmail,
+      );
       if (authorIdentity !== commit.author.identity) {
         changes.push("author identity");
       }
@@ -81,7 +88,10 @@ export async function createPlan(yamlPath: string): Promise<RebasePlan> {
       }
 
       // Check committer
-      const committerIdentity = formatIdentity(originalInfo.committerName, originalInfo.committerEmail);
+      const committerIdentity = formatIdentity(
+        originalInfo.committerName,
+        originalInfo.committerEmail,
+      );
       if (committerIdentity !== commit.committer.identity) {
         changes.push("committer identity");
       }

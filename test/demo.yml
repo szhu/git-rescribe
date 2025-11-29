@@ -16,7 +16,7 @@ commits:
       Created basic setup with configuration files and
       main application entry point.
     parents:
-      - abc1234  # External commit (base)
+      - abc1234 # External commit (base)
 
   # Second commit - uses previous commit as parent
   - author:
@@ -25,11 +25,11 @@ commits:
     committer:
       date: 2025-01-15T11:00:00-05:00
       identity: Alice Developer <alice@example.com>
-    content: diff:def5678  # Apply diff from original commit
+    content: diff:def5678 # Apply diff from original commit
     message: |
       Simplify setup by removing boilerplate
     parents:
-      - previous  # Previous commit in this list
+      - previous # Previous commit in this list
 
   # Third commit - use commit tree directly
   - author:
@@ -38,7 +38,7 @@ commits:
     committer:
       date: 2025-01-15T12:00:00-05:00
       identity: Alice Developer <alice@example.com>
-    content: commit:ghi9012  # Use tree from this commit
+    content: commit:ghi9012 # Use tree from this commit
     message: |
       Improve error handling
     parents:
@@ -55,7 +55,7 @@ commits:
     message: |
       Add feature X
     parents:
-      - rewritten:jkl3456  # Branch from rewritten version of this commit
+      - rewritten:jkl3456 # Branch from rewritten version of this commit
 
   # Branch 2 - Bob's work (parallel to branch 1)
   - author:
@@ -68,7 +68,7 @@ commits:
     message: |
       Add feature Y
     parents:
-      - rewritten:jkl3456  # Same parent = parallel branch
+      - rewritten:jkl3456 # Same parent = parallel branch
 
   # Merge commit
   - author:
@@ -81,5 +81,5 @@ commits:
     message: |
       Merge features X and Y
     parents:
-      - rewritten:vwx2345  # First parent
-      - rewritten:mno7890  # Second parent (creates merge)
+      - rewritten:vwx2345 # First parent
+      - rewritten:mno7890 # Second parent (creates merge)

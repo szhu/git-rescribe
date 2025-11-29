@@ -14,7 +14,11 @@ export async function executeRescribe(
 ): Promise<string | null> {
   const { updateHead = true } = options;
 
-  console.log(`Processing ${plan.commits.length} commit${plan.commits.length === 1 ? "" : "s"}...`);
+  console.log(
+    `Processing ${plan.commits.length} commit${
+      plan.commits.length === 1 ? "" : "s"
+    }...`,
+  );
 
   // Track mapping of original hash → new hash for resolving "pending" references
   const rewrittenMap = new Map<string, string>();
@@ -25,7 +29,7 @@ export async function executeRescribe(
     console.log(`\n[${i + 1}/${plan.commits.length}] Processing commit...`);
 
     // Resolve parent placeholders for display and execution
-    const resolvedParents = commitPlan.parents.map(parent => {
+    const resolvedParents = commitPlan.parents.map((parent) => {
       if (parent === "pending") {
         return finalCommit!;
       }
@@ -33,7 +37,13 @@ export async function executeRescribe(
     });
 
     console.log(`  Tree: ${commitPlan.tree}`);
-    console.log(`  Parents: ${resolvedParents.length === 0 ? "(root commit)" : resolvedParents.join(", ")}`);
+    console.log(
+      `  Parents: ${
+        resolvedParents.length === 0
+          ? "(root commit)"
+          : resolvedParents.join(", ")
+      }`,
+    );
 
     let newHash: string;
 
@@ -42,7 +52,6 @@ export async function executeRescribe(
       newHash = commitPlan.originalHash!;
       console.log(`  Reused: ${newHash} (unchanged)`);
     } else {
-
       // Create commit with custom metadata
       newHash = await createCommit({
         tree: commitPlan.tree,
@@ -70,4 +79,3 @@ export async function executeRescribe(
 
   return finalCommit;
 }
-
