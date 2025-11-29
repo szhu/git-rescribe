@@ -5,7 +5,7 @@
 
 import { parse as parseYaml } from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { RebaseSchema } from "./schema.ts";
-import { getCommitInfo } from "../lib/git-rebase.ts";
+import { getCommitInfo, getTreeHash, formatIdentity } from "../lib/git.ts";
 import type { RescribeCommit } from "./types.ts";
 
 /**
@@ -72,7 +72,7 @@ export async function createPlan(yamlPath: string): Promise<RebasePlan> {
       }
 
       // Check author
-      const authorIdentity = `${originalInfo.authorName} <${originalInfo.authorEmail}>`;
+      const authorIdentity = formatIdentity(originalInfo.authorName, originalInfo.authorEmail);
       if (authorIdentity !== commit.author.identity) {
         changes.push("author identity");
       }
@@ -81,7 +81,7 @@ export async function createPlan(yamlPath: string): Promise<RebasePlan> {
       }
 
       // Check committer
-      const committerIdentity = `${originalInfo.committerName} <${originalInfo.committerEmail}>`;
+      const committerIdentity = formatIdentity(originalInfo.committerName, originalInfo.committerEmail);
       if (committerIdentity !== commit.committer.identity) {
         changes.push("committer identity");
       }
@@ -151,12 +151,7 @@ async function resolveContentStrategy(content: string): Promise<string> {
   }
 
   if (strategy === "commit" || strategy === "diff") {
-    const command = new Deno.Command("git", {
-      args: ["rev-parse", `${hash}^{tree}`],
-      stdout: "piped",
-    });
-    const { stdout } = await command.output();
-    return new TextDecoder().decode(stdout).trim();
+    return await getTreeHash(hash);
   }
 
   throw new Error(`Unknown content strategy: ${strategy}`);

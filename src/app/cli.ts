@@ -4,6 +4,9 @@
  */
 
 import { openEditor } from "../lib/editor.ts";
+import { exists } from "../lib/fs.ts";
+import { truncate } from "../lib/string.ts";
+import { getCurrentBranch, countCommits, resolveRef } from "../lib/git.ts";
 import { convertGitGraphToYaml } from "./converter.ts";
 import { executeRescribe } from "./executor.ts";
 import { createPlan, type RebasePlan } from "./planner.ts";
@@ -13,15 +16,6 @@ const RESCRIBE_STATE = ".git/RESCRIBE_STATE";
 
 // Global flag for --yes
 let skipConfirmation = false;
-
-async function exists(path: string): Promise<boolean> {
-  try {
-    await Deno.stat(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Start a new interactive rebase
@@ -56,12 +50,7 @@ export async function startRebase(base: string): Promise<void> {
   await Deno.writeTextFile(RESCRIBE_TODO, yaml);
 
   // Save original HEAD
-  const getHead = new Deno.Command("git", {
-    args: ["rev-parse", "--abbrev-ref", "HEAD"],
-    stdout: "piped",
-  });
-  const { stdout } = await getHead.output();
-  const originalRef = new TextDecoder().decode(stdout).trim();
+  const originalRef = await getCurrentBranch();
   await Deno.writeTextFile(RESCRIBE_STATE, originalRef);
 
   // Open editor for user to edit YAML
@@ -83,13 +72,7 @@ async function validateBase(base: string): Promise<{
   totalCommits: number;
 }> {
   // Get total commit count in current branch
-  const countCmd = new Deno.Command("git", {
-    args: ["rev-list", "--count", "HEAD"],
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const { stdout: countStdout } = await countCmd.output();
-  const totalCommits = parseInt(new TextDecoder().decode(countStdout).trim(), 10);
+  const totalCommits = await countCommits("HEAD");
 
   // Special case: --root means all commits
   if (base === "--root") {
@@ -97,24 +80,13 @@ async function validateBase(base: string): Promise<{
   }
 
   // Try to resolve the base ref
-  const resolveCmd = new Deno.Command("git", {
-    args: ["rev-parse", "--verify", base],
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const { code } = await resolveCmd.output();
-
-  if (code !== 0) {
+  const valid = await resolveRef(base);
+  if (!valid) {
     return { valid: false, commitCount: 0, totalCommits };
   }
 
   // Count commits between base and HEAD
-  const rangeCmd = new Deno.Command("git", {
-    args: ["rev-list", "--count", `${base}..HEAD`],
-    stdout: "piped",
-  });
-  const { stdout: rangeStdout } = await rangeCmd.output();
-  const commitCount = parseInt(new TextDecoder().decode(rangeStdout).trim(), 10);
+  const commitCount = await countCommits(`${base}..HEAD`);
 
   return { valid: true, commitCount, totalCommits };
 }
@@ -127,7 +99,7 @@ async function previewChanges(plan: RebasePlan): Promise<void> {
 
   for (const commitPlan of plan.commits) {
     const firstLine = commitPlan.commit.message.split('\n')[0];
-    const truncated = firstLine.length > 60 ? firstLine.substring(0, 57) + "..." : firstLine;
+    const truncated = truncate(firstLine, 60);
 
     const status = commitPlan.action === "reuse" ? "  Reuse" : " Modify";
     console.log(`${status}  ${truncated}`);

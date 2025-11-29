@@ -3,6 +3,7 @@
  */
 
 import type { RebasePlan } from "./planner.ts";
+import { createCommit, updateCurrentBranch } from "../lib/git.ts";
 
 /**
  * Execute a rebase plan
@@ -70,82 +71,3 @@ export async function executeRescribe(
   return finalCommit;
 }
 
-/**
- * Create a commit using git commit-tree
- */
-async function createCommit(options: {
-  tree: string;
-  parents: string[];
-  author: { identity: string; date: string };
-  committer: { identity: string; date: string };
-  message: string;
-}): Promise<string> {
-  const { tree, parents, author, committer, message } = options;
-
-  // Build args for git commit-tree
-  const args = [tree];
-  for (const parent of parents) {
-    args.push("-p", parent);
-  }
-  args.push("-m", message);
-
-  const command = new Deno.Command("git", {
-    args: ["commit-tree", ...args],
-    env: {
-      ...Deno.env.toObject(),
-      GIT_AUTHOR_NAME: parseIdentity(author.identity).name,
-      GIT_AUTHOR_EMAIL: parseIdentity(author.identity).email,
-      GIT_AUTHOR_DATE: author.date,
-      GIT_COMMITTER_NAME: parseIdentity(committer.identity).name,
-      GIT_COMMITTER_EMAIL: parseIdentity(committer.identity).email,
-      GIT_COMMITTER_DATE: committer.date,
-    },
-    stdout: "piped",
-  });
-
-  const { stdout } = await command.output();
-  return new TextDecoder().decode(stdout).trim();
-}
-
-/**
- * Parse identity string "Name <email@example.com>"
- */
-function parseIdentity(identity: string): { name: string; email: string } {
-  const match = identity.match(/^(.+?)\s*<(.+?)>$/);
-  if (!match) {
-    throw new Error(`Invalid identity format: ${identity}`);
-  }
-  return {
-    name: match[1].trim(),
-    email: match[2].trim(),
-  };
-}
-
-/**
- * Update current branch to point to the new commit
- */
-async function updateCurrentBranch(commitHash: string): Promise<void> {
-  // Get current branch name
-  const getBranch = new Deno.Command("git", {
-    args: ["rev-parse", "--abbrev-ref", "HEAD"],
-    stdout: "piped",
-  });
-  const { stdout } = await getBranch.output();
-  const branch = new TextDecoder().decode(stdout).trim();
-
-  // Update branch ref
-  const updateRef = new Deno.Command("git", {
-    args: ["update-ref", `refs/heads/${branch}`, commitHash],
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  await updateRef.output();
-
-  // Reset working tree to match
-  const reset = new Deno.Command("git", {
-    args: ["reset", "--hard", commitHash],
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  await reset.output();
-}

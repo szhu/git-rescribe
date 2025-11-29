@@ -4,7 +4,7 @@
  */
 
 import * as prettier from "npm:prettier@3.1.0";
-import type { RebasePlan } from "../app/types.ts";
+import type { RebasePlan } from "./types.ts";
 
 /**
  * Convert a RebasePlan to formatted YAML string
@@ -38,15 +38,7 @@ export async function formatYaml(data: RebasePlan): Promise<string> {
       lines.push(`      ${msgLine}`);
     }
 
-    // Parents array
-    lines.push("    parents:");
-    if (commit.parents.length === 0) {
-      lines.push("      []");
-    } else {
-      for (const parent of commit.parents) {
-        lines.push(`      - ${JSON.stringify(parent)}`);
-      }
-    }
+    lines.push(`    parents: ${JSON.stringify(commit.parents)}`);
   }
 
   const yaml = lines.join('\n') + '\n';

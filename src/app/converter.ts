@@ -2,8 +2,8 @@
  * Convert between git commits and rescribe YAML format
  */
 
-import { getCommitInfo } from "../lib/git-rebase.ts";
-import { formatYaml } from "../lib/yaml-prettier.ts";
+import { getCommitInfo, formatIdentity } from "../lib/git.ts";
+import { formatYaml } from "./yaml-prettier.ts";
 import type { RescribeCommit } from "./types.ts";
 
 /**
@@ -74,11 +74,11 @@ export async function convertGitGraphToYaml(base: string): Promise<string> {
     const rescribeCommit: RescribeCommit = {
       author: {
         date: info.authorDate,
-        identity: `${info.authorName} <${info.authorEmail}>`,
+        identity: formatIdentity(info.authorName, info.authorEmail),
       },
       committer: {
         date: info.committerDate,
-        identity: `${info.committerName} <${info.committerEmail}>`,
+        identity: formatIdentity(info.committerName, info.committerEmail),
       },
       content: `commit:${hash.substring(0, 7)}`,
       message: info.message,
