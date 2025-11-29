@@ -4,6 +4,8 @@
 
 import { parse as parseYaml } from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { RebaseSchema } from "./schema.ts";
+import { getCommitInfo } from "../lib/git-rebase.ts";
+import type { RescribeCommit } from "./types.ts";
 
 /**
  * Execute a rebase plan from a YAML file
@@ -38,18 +40,27 @@ export async function executeRescribe(
     const parents = resolveParents(commit.parents, previousCommit, rewrittenMap);
     console.log(`  Parents: ${parents.length === 0 ? "(root commit)" : parents.join(", ")}`);
 
-    // 3. Create commit with custom metadata
-    const newHash = await createCommit({
-      tree,
-      parents,
-      author: commit.author,
-      committer: commit.committer,
-      message: commit.message,
-    });
-    console.log(`  Created: ${newHash}`);
+    // 3. Check if we can reuse the original commit (pick behavior)
+    const originalHash = extractOriginalHash(commit.content);
+    let newHash: string;
+
+    if (originalHash && await canReuseCommit(originalHash, commit, tree, parents)) {
+      // Commit is unchanged - reuse original (like git rebase pick)
+      newHash = originalHash;
+      console.log(`  Reused: ${newHash} (unchanged)`);
+    } else {
+      // Create commit with custom metadata
+      newHash = await createCommit({
+        tree,
+        parents,
+        author: commit.author,
+        committer: commit.committer,
+        message: commit.message,
+      });
+      console.log(`  Created: ${newHash}`);
+    }
 
     // 4. Track the new commit
-    const originalHash = extractOriginalHash(commit.content);
     if (originalHash) {
       rewrittenMap.set(originalHash, newHash);
     }
@@ -192,6 +203,59 @@ function extractOriginalHash(content: string): string | null {
     return hash;
   }
   return null;
+}
+
+/**
+ * Check if we can reuse the original commit (pick behavior)
+ * Returns true if the commit is unchanged from the original
+ */
+async function canReuseCommit(
+  originalHash: string,
+  commit: RescribeCommit,
+  tree: string,
+  parents: string[],
+): Promise<boolean> {
+  try {
+    const info = await getCommitInfo(originalHash);
+
+    // Check if tree matches
+    if (info.tree !== tree) {
+      return false;
+    }
+
+    // Check if parents match
+    if (info.parents.length !== parents.length) {
+      return false;
+    }
+    for (let i = 0; i < parents.length; i++) {
+      if (!info.parents[i].startsWith(parents[i])) {
+        return false;
+      }
+    }
+
+    // Check if author matches
+    const authorIdentity = `${info.authorName} <${info.authorEmail}>`;
+    if (authorIdentity !== commit.author.identity || info.authorDate !== commit.author.date) {
+      return false;
+    }
+
+    // Check if committer matches
+    const committerIdentity = `${info.committerName} <${info.committerEmail}>`;
+    if (committerIdentity !== commit.committer.identity || info.committerDate !== commit.committer.date) {
+      return false;
+    }
+
+    // Check if message matches
+    if (info.message !== commit.message) {
+      return false;
+    }
+
+    // Everything matches - we can reuse this commit!
+    return true;
+  } catch {
+    // If we can't get commit info, we can't reuse it
+    return false;
+  }
 }
 
 /**
