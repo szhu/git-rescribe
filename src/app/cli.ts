@@ -6,9 +6,13 @@
 import { openEditor } from "../lib/editor.ts";
 import { convertGitGraphToYaml } from "./converter.ts";
 import { executeRescribe } from "./executor.ts";
+import { createPlan, type RebasePlan } from "./planner.ts";
 
 const RESCRIBE_TODO = ".git/RESCRIBE_TODO.yml";
 const RESCRIBE_STATE = ".git/RESCRIBE_STATE";
+
+// Global flag for --yes
+let skipConfirmation = false;
 
 async function exists(path: string): Promise<boolean> {
   try {
@@ -64,11 +68,10 @@ export async function startRebase(base: string): Promise<void> {
   console.log("Opening editor...");
   await openEditor(RESCRIBE_TODO);
 
-  console.log("\nYAML saved to:", RESCRIBE_TODO);
-  console.log("\nNext steps:");
-  console.log("  1. Review/edit the YAML file if needed");
-  console.log("  2. Run: git-rescribe --continue");
-  console.log("  3. Or run: git-rescribe --abort to cancel");
+  console.log("\nEditor closed. Applying changes...");
+
+  // Automatically continue after editor exits
+  await continueRebase();
 }
 
 /**
@@ -117,16 +120,50 @@ async function validateBase(base: string): Promise<{
 }
 
 /**
+ * Preview changes and get user confirmation
+ */
+async function previewChanges(plan: RebasePlan): Promise<void> {
+  console.log(`\nPlan for ${plan.commits.length} commit${plan.commits.length === 1 ? "" : "s"}:`);
+
+  for (const commitPlan of plan.commits) {
+    const firstLine = commitPlan.commit.message.split('\n')[0];
+    const truncated = firstLine.length > 60 ? firstLine.substring(0, 57) + "..." : firstLine;
+
+    const status = commitPlan.action === "reuse" ? "  Reuse" : " Modify";
+    console.log(`${status}  ${truncated}`);
+
+    // Show what changed for modified commits
+    if (commitPlan.action === "create" && commitPlan.changes.length > 0) {
+      for (const change of commitPlan.changes) {
+        console.log(`         - ${change}`);
+      }
+    }
+  }
+
+  // Wait for confirmation unless --yes flag
+  if (!skipConfirmation) {
+    console.log("\nPress Enter to continue or Ctrl+C to cancel...");
+    const buf = new Uint8Array(1);
+    await Deno.stdin.read(buf);
+  }
+}
+
+/**
  * Continue an in-progress rebase
  */
 export async function continueRebase(): Promise<void> {
-  console.log("Continuing rescribe...");
-
   if (!await exists(RESCRIBE_TODO)) {
     throw new Error("No rescribe in progress. Did you run 'git-rescribe <base>' first?");
   }
 
-  await executeRescribe(RESCRIBE_TODO);
+  // Create plan
+  const plan = await createPlan(RESCRIBE_TODO);
+
+  // Preview changes and get confirmation
+  await previewChanges(plan);
+
+  console.log("\nApplying changes...");
+  await executeRescribe(plan);
 
   // Clean up
   console.log("\nCleaning up...");
@@ -161,6 +198,14 @@ export async function abortRebase(): Promise<void> {
 export async function main(): Promise<void> {
   const args = Deno.args;
 
+  // Check for --yes flag
+  if (args.includes("--yes") || args.includes("-y")) {
+    skipConfirmation = true;
+  }
+
+  // Filter out flags to get positional args
+  const positionalArgs = args.filter(arg => !arg.startsWith("-"));
+
   // Check for flags
   if (args.includes("--abort")) {
     await abortRebase();
@@ -179,19 +224,21 @@ export async function main(): Promise<void> {
   }
 
   // Base argument is required
-  if (args.length === 0) {
+  if (positionalArgs.length === 0) {
     console.error("Error: Missing base argument");
     console.error("\nUsage:");
-    console.error("  git-rescribe <base>     Start interactive rebase from base");
-    console.error("  git-rescribe --root     Rescribe all commits");
-    console.error("  git-rescribe --continue Continue in-progress rescribe");
-    console.error("  git-rescribe --abort    Abort in-progress rescribe");
+    console.error("  git-rescribe <base>        Start interactive rebase from base");
+    console.error("  git-rescribe --root        Rescribe all commits");
+    console.error("  git-rescribe --continue    Continue in-progress rescribe");
+    console.error("  git-rescribe --abort       Abort in-progress rescribe");
+    console.error("\nOptions:");
+    console.error("  --yes, -y                  Skip confirmation prompt");
     console.error("\nExamples:");
-    console.error("  git-rescribe HEAD~5     Rescribe last 5 commits");
-    console.error("  git-rescribe main       Rescribe commits since main branch");
+    console.error("  git-rescribe HEAD~5        Rescribe last 5 commits");
+    console.error("  git-rescribe main --yes    Rescribe commits since main without prompt");
     Deno.exit(1);
   }
 
-  const base = args[0];
+  const base = positionalArgs[0];
   await startRebase(base);
 }

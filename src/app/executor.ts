@@ -2,145 +2,72 @@
  * Execute a rescribe rebase plan
  */
 
-import { parse as parseYaml } from "https://deno.land/std@0.208.0/yaml/mod.ts";
-import { RebaseSchema } from "./schema.ts";
-import { getCommitInfo } from "../lib/git-rebase.ts";
-import type { RescribeCommit } from "./types.ts";
+import type { RebasePlan } from "./planner.ts";
 
 /**
- * Execute a rebase plan from a YAML file
+ * Execute a rebase plan
  */
 export async function executeRescribe(
-  yamlPath: string,
+  plan: RebasePlan,
   options: { updateHead?: boolean } = {},
 ): Promise<string | null> {
   const { updateHead = true } = options;
 
-  console.log("Validating YAML...");
+  console.log(`Processing ${plan.commits.length} commit${plan.commits.length === 1 ? "" : "s"}...`);
 
-  const yamlContent = await Deno.readTextFile(yamlPath);
-  const parsed = parseYaml(yamlContent);
-  const validated = RebaseSchema.parse(parsed);
-
-  console.log(`Found ${validated.commits.length} commits to process`);
-
-  // Track mapping of original hash → new hash for rewritten: references
+  // Track mapping of original hash → new hash for resolving "pending" references
   const rewrittenMap = new Map<string, string>();
-  let previousCommit: string | null = null;
+  let finalCommit: string | null = null;
 
-  for (let i = 0; i < validated.commits.length; i++) {
-    const commit = validated.commits[i];
-    console.log(`\n[${i + 1}/${validated.commits.length}] Processing commit...`);
+  for (let i = 0; i < plan.commits.length; i++) {
+    const commitPlan = plan.commits[i];
+    console.log(`\n[${i + 1}/${plan.commits.length}] Processing commit...`);
 
-    // 1. Resolve tree hash from content strategy
-    const tree = await resolveContentStrategy(commit.content);
-    console.log(`  Tree: ${tree}`);
+    // Resolve parent placeholders for display and execution
+    const resolvedParents = commitPlan.parents.map(parent => {
+      if (parent === "pending") {
+        return finalCommit!;
+      }
+      return parent;
+    });
 
-    // 2. Resolve parents
-    const parents = resolveParents(commit.parents, previousCommit, rewrittenMap);
-    console.log(`  Parents: ${parents.length === 0 ? "(root commit)" : parents.join(", ")}`);
+    console.log(`  Tree: ${commitPlan.tree}`);
+    console.log(`  Parents: ${resolvedParents.length === 0 ? "(root commit)" : resolvedParents.join(", ")}`);
 
-    // 3. Check if we can reuse the original commit (pick behavior)
-    const originalHash = extractOriginalHash(commit.content);
     let newHash: string;
 
-    if (originalHash && await canReuseCommit(originalHash, commit, tree, parents)) {
-      // Commit is unchanged - reuse original (like git rebase pick)
-      newHash = originalHash;
+    if (commitPlan.action === "reuse") {
+      // Reuse the original commit
+      newHash = commitPlan.originalHash!;
       console.log(`  Reused: ${newHash} (unchanged)`);
     } else {
+
       // Create commit with custom metadata
       newHash = await createCommit({
-        tree,
-        parents,
-        author: commit.author,
-        committer: commit.committer,
-        message: commit.message,
+        tree: commitPlan.tree,
+        parents: resolvedParents,
+        author: commitPlan.commit.author,
+        committer: commitPlan.commit.committer,
+        message: commitPlan.commit.message,
       });
       console.log(`  Created: ${newHash}`);
     }
 
-    // 4. Track the new commit
-    if (originalHash) {
-      rewrittenMap.set(originalHash, newHash);
+    // Track the new commit
+    if (commitPlan.originalHash) {
+      rewrittenMap.set(commitPlan.originalHash, newHash);
     }
-    previousCommit = newHash;
+    finalCommit = newHash;
   }
 
-  // 5. Optionally update current branch to point to final commit
-  if (previousCommit && updateHead) {
-    console.log(`\nUpdating HEAD to ${previousCommit}...`);
-    await updateCurrentBranch(previousCommit);
+  // Optionally update current branch to point to final commit
+  if (finalCommit && updateHead) {
+    console.log(`\nUpdating HEAD to ${finalCommit}...`);
+    await updateCurrentBranch(finalCommit);
     console.log("✓ Rebase complete!");
   }
 
-  return previousCommit;
-}
-
-/**
- * Resolve content strategy to a tree hash
- * Supports: tree:hash, diff:hash, commit:hash
- */
-async function resolveContentStrategy(content: string): Promise<string> {
-  const [strategy, hash] = content.split(":");
-
-  if (strategy === "tree") {
-    return hash;
-  }
-
-  if (strategy === "commit") {
-    // Get tree from existing commit
-    const command = new Deno.Command("git", {
-      args: ["rev-parse", `${hash}^{tree}`],
-      stdout: "piped",
-    });
-    const { stdout } = await command.output();
-    return new TextDecoder().decode(stdout).trim();
-  }
-
-  if (strategy === "diff") {
-    // Apply diff to get new tree
-    // This is complex - for now, just use the commit's tree
-    // TODO: Implement actual diff application
-    const command = new Deno.Command("git", {
-      args: ["rev-parse", `${hash}^{tree}`],
-      stdout: "piped",
-    });
-    const { stdout } = await command.output();
-    return new TextDecoder().decode(stdout).trim();
-  }
-
-  throw new Error(`Unknown content strategy: ${strategy}`);
-}
-
-/**
- * Resolve parent references to actual commit hashes
- */
-function resolveParents(
-  parents: string[],
-  previousCommit: string | null,
-  rewrittenMap: Map<string, string>,
-): string[] {
-  return parents.map((parent) => {
-    if (parent === "previous") {
-      if (!previousCommit) {
-        throw new Error("Cannot use 'previous' for first commit");
-      }
-      return previousCommit;
-    }
-
-    if (parent.startsWith("rewritten:")) {
-      const originalHash = parent.substring("rewritten:".length);
-      const rewritten = rewrittenMap.get(originalHash);
-      if (!rewritten) {
-        throw new Error(`No rewritten commit found for ${originalHash}`);
-      }
-      return rewritten;
-    }
-
-    // Direct hash reference
-    return parent;
-  });
+  return finalCommit;
 }
 
 /**
@@ -192,70 +119,6 @@ function parseIdentity(identity: string): { name: string; email: string } {
     name: match[1].trim(),
     email: match[2].trim(),
   };
-}
-
-/**
- * Extract original commit hash from content strategy (if commit: or diff:)
- */
-function extractOriginalHash(content: string): string | null {
-  const [strategy, hash] = content.split(":");
-  if (strategy === "commit" || strategy === "diff") {
-    return hash;
-  }
-  return null;
-}
-
-/**
- * Check if we can reuse the original commit (pick behavior)
- * Returns true if the commit is unchanged from the original
- */
-async function canReuseCommit(
-  originalHash: string,
-  commit: RescribeCommit,
-  tree: string,
-  parents: string[],
-): Promise<boolean> {
-  try {
-    const info = await getCommitInfo(originalHash);
-
-    // Check if tree matches
-    if (info.tree !== tree) {
-      return false;
-    }
-
-    // Check if parents match
-    if (info.parents.length !== parents.length) {
-      return false;
-    }
-    for (let i = 0; i < parents.length; i++) {
-      if (!info.parents[i].startsWith(parents[i])) {
-        return false;
-      }
-    }
-
-    // Check if author matches
-    const authorIdentity = `${info.authorName} <${info.authorEmail}>`;
-    if (authorIdentity !== commit.author.identity || info.authorDate !== commit.author.date) {
-      return false;
-    }
-
-    // Check if committer matches
-    const committerIdentity = `${info.committerName} <${info.committerEmail}>`;
-    if (committerIdentity !== commit.committer.identity || info.committerDate !== commit.committer.date) {
-      return false;
-    }
-
-    // Check if message matches
-    if (info.message !== commit.message) {
-      return false;
-    }
-
-    // Everything matches - we can reuse this commit!
-    return true;
-  } catch {
-    // If we can't get commit info, we can't reuse it
-    return false;
-  }
 }
 
 /**
