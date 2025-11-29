@@ -1,0 +1,32 @@
+#!/usr/bin/env -S deno run --allow-read --allow-write --allow-run --allow-env --allow-sys
+
+/**
+ * git-rescribe - Entry point
+ *
+ * This is a thin wrapper that delegates to the main CLI implementation.
+ */
+
+import { main, editorMode } from "../src/app/cli.ts";
+
+// Detect if we're being called as GIT_SEQUENCE_EDITOR
+// Two detection methods:
+// 1. GIT_SEQUENCE_EDITOR env var is set (most reliable)
+// 2. Single argument ending in /git-rebase-todo (fallback)
+const args = Deno.args;
+const isSequenceEditor = Deno.env.get("GIT_SEQUENCE_EDITOR") !== undefined ||
+                         (args.length === 1 && args[0].endsWith("/git-rebase-todo"));
+
+if (isSequenceEditor) {
+  // We're being called as the editor!
+  const todoFile = args[0];
+  editorMode(todoFile).catch((error: Error) => {
+    console.error("Error:", error.message);
+    Deno.exit(1);
+  });
+} else {
+  // Normal CLI invocation
+  main().catch((error: Error) => {
+    console.error("Error:", error.message);
+    Deno.exit(1);
+  });
+}
